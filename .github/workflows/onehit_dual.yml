@@ -1,0 +1,138 @@
+name: one-hit-dual
+
+on:
+  push:
+    branches: [tmp-one-hit-wonder]
+    paths:
+      - '.github/workflows/onehit_dual.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  solve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: tmp-one-hit-wonder
+          fetch-depth: 0
+      - name: Solve dual MIHNP lattice
+        id: solve
+        continue-on-error: true
+        run: |
+          pip install --quiet fpylll cysignals
+          python3 - <<'PY' 2>&1 | tee tmp_onehit/dual_log.txt
+          import json
+          from fpylll import IntegerMatrix, LLL, BKZ
+
+          with open("tmp_onehit/leaks.json") as f: d=json.load(f)
+          p=int(d["p"]); n=int(d["bits"]); k=int(d["keep"]); low=n-k
+          X=1<<(low-1)
+          hs=[int(q["y"]) for q in d["leaks"]]
+          A=[(h<<low)+X for h in hs]
+
+          pairs=[(a,b) for a in range(8) for b in range(a+1,8)]
+          pair_idx={ab:i for i,ab in enumerate(pairs)}
+          relpairs=[(i,j) for i in range(1,8) for j in range(i+1,8)]
+          T=1+8+len(pairs)
+          R=len(relpairs); D=T+R
+          assert D==58
+
+          def cm(x):
+              x%=p
+              return x-p if x>p//2 else x
+
+          # coefficient dictionaries for each modular relation
+          coeffs=[]
+          for i,j in relpairs:
+              c={}
+              c[("c",)]=cm((i-j)*A[i]*A[j] + j*A[0]*A[j] - i*A[0]*A[i])
+              c[("l",0)]=cm(j*A[j]-i*A[i])
+              c[("l",i)]=cm((i-j)*A[j]-i*A[0])
+              c[("l",j)]=cm((i-j)*A[i]+j*A[0])
+              c[("q",i,j)]=i-j
+              c[("q",0,j)]=j
+              c[("q",0,i)]=-i
+              coeffs.append(c)
+
+          rows=[]
+          # constant monomial
+          r=[0]*D; r[0]=X*X
+          for q,c in enumerate(coeffs): r[T+q]=c.get(("c",),0)*X*X
+          rows.append(r)
+          # linear monomials
+          for a in range(8):
+              r=[0]*D; r[1+a]=X
+              for q,c in enumerate(coeffs): r[T+q]=c.get(("l",a),0)*X*X
+              rows.append(r)
+          # quadratic pair monomials
+          for pi,(a,b) in enumerate(pairs):
+              r=[0]*D; r[1+8+pi]=1
+              for q,c in enumerate(coeffs):
+                  r[T+q]=c.get(("q",a,b),0)*X*X
+              rows.append(r)
+          # modulus cancellation rows
+          for q in range(R):
+              r=[0]*D; r[T+q]=p*X*X; rows.append(r)
+
+          M=IntegerMatrix.from_matrix(rows)
+          print("[+] lattice",D,"Xbits",X.bit_length(),flush=True)
+          LLL.reduction(M, delta=0.9999, eta=0.5001)
+          print("[+] LLL done",flush=True)
+
+          def test_rows(M, label):
+              for ri in range(D):
+                  row=[int(M[ri,j]) for j in range(D)]
+                  if any(row[T:]): continue
+                  if abs(row[0]) != X*X: continue
+                  s=1 if row[0]>0 else -1
+                  es=[]
+                  ok=True
+                  for a in range(8):
+                      num=s*row[1+a]
+                      if num % X: ok=False; break
+                      e=num//X
+                      if not (-X <= e <= X): ok=False; break
+                      es.append(e)
+                  if not ok: continue
+                  # confirm quadratic coordinates
+                  for pi,(a,b) in enumerate(pairs):
+                      if s*row[1+8+pi] != es[a]*es[b]:
+                          ok=False; break
+                  if not ok: continue
+                  z=[(A[a]+es[a])%p for a in range(8)]
+                  if not all((z[a]>>low)==hs[a] for a in range(8)): continue
+                  u=(z[1]*pow((z[0]-z[1])%p,-1,p))%p
+                  v=(u*z[0])%p
+                  if not all((v*pow((u+a)%p,-1,p))%p==z[a] for a in range(8)): continue
+                  print("[+] FOUND",label,ri,flush=True)
+                  print("u =",u); print("v =",v)
+                  with open("tmp_onehit/answer.json","w") as f:
+                      json.dump({"p":p,"u":u,"v":v},f)
+                  return True
+              return False
+
+          if not test_rows(M,"LLL"):
+              print("[-] no exact target row after LLL; trying BKZ-20",flush=True)
+              BKZ.reduction(M, BKZ.Param(block_size=20, max_loops=4))
+              if not test_rows(M,"BKZ20"):
+                  print("[-] no target row",flush=True)
+                  # Save shortlist diagnostics
+                  for ri in range(min(12,D)):
+                      row=[int(M[ri,j]) for j in range(D)]
+                      nz=sum(x!=0 for x in row[T:])
+                      print("row",ri,"tailnz",nz,"head0_ratio_bits",(abs(row[0]).bit_length() if row[0] else 0))
+                  raise SystemExit(2)
+          PY
+      - name: Publish
+        if: always()
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git pull --rebase origin tmp-one-hit-wonder || true
+          date -u > tmp_onehit/dual_done.txt
+          git add tmp_onehit/dual_log.txt tmp_onehit/dual_done.txt tmp_onehit/answer.json 2>/dev/null || true
+          git commit -m "relay: dual solver status" || true
+          git push origin HEAD:tmp-one-hit-wonder || true
