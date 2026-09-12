@@ -8,19 +8,18 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Enumerate Postman collections by ID
+      - name: Probe notification endpoint
         shell: bash
         run: |
-          set -e
-          for cid in             '54600970-4edc63a9-1623-4304-8ad5-c6e0662b6452'             '54600970-62f5e9dc-0019-4cf5-bf1b-78ba287412d2'; do
-            echo "===== COLLECTION $cid ====="
-            curl -fsS -X POST 'https://api.postman.com/search?limit=25'               -H 'Content-Type: application/json'               --data "$(jq -nc --arg cid "$cid" '{
-                elementType:"requests",
-                ownership:"all",
-                filters:{"$and":[
-                  {"visibility":{"$eq":"public"}},
-                  {"collectionId":{"$eq":$cid}}
-                ]}
-              }')" |
-              jq '{meta, data:[.data[]? | {id,name,method,url,description,collection,workspace,links}]}'
+          set +e
+          echo '===== POSTMAN REQUEST SELF ====='
+          curl -skS -i             'https://api.postman.com/collections/54600970-62f5e9dc-0019-4cf5-bf1b-78ba287412d2/requests/54600970-e22d56b7-7787-4af1-b15f-737ba15c6e08' |
+            head -c 12000
+          echo
+          B='https://thecontinental.azurewebsites.net/v2/notify/send'
+          for body in             '{}'             '{"to":"winston@ztaha45hotmail.onmicrosoft.com"}'             '{"recipient":"winston@ztaha45hotmail.onmicrosoft.com"}'             '{"email":"winston@ztaha45hotmail.onmicrosoft.com"}'             '{"to":"winston@ztaha45hotmail.onmicrosoft.com","subject":"test","body":"test"}'             '{"recipient":"winston@ztaha45hotmail.onmicrosoft.com","type":"activation"}'; do
+              echo "===== BODY $body ====="
+              curl -skS -i -X POST "$B" -H 'Content-Type: application/json' -d "$body" | head -n 100
           done
+          echo '===== OPTIONS ====='
+          curl -skS -i -X OPTIONS "$B" | head -n 60
