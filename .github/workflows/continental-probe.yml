@@ -8,19 +8,16 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Enumerate Postman workspace assets
+      - name: Read workspace README
         shell: bash
         run: |
-          set -e
-          WS='7e7f4b2d-192c-45b9-b1b5-a082983fd1c4'
-          for typ in environments collections mocks flows specs documents; do
-            echo "===== $typ ====="
-            curl -fsS -X POST 'https://api.postman.com/search?limit=25'               -H 'Content-Type: application/json'               --data "$(jq -nc --arg typ "$typ" --arg ws "$WS" '{
-                elementType:$typ,
-                ownership:"all",
-                filters:{"$and":[
-                  {"visibility":{"$eq":"public"}},
-                  {"workspaceId":{"$eq":$ws}}
-                ]}
-              }')" | jq .
+          set +e
+          ID='fa787ab6-00be-4a28-ba90-7822883a55c8'
+          for u in             "https://api.postman.com/docs/$ID"             "https://go.postman.co/doc/$ID"             "https://www.postman.com/continental-devteam/workspace/continental-devteam/document/$ID"; do
+            echo "===== $u ====="
+            curl -LskS -D /tmp/h -o /tmp/b --max-time 20 "$u"
+            head -n 30 /tmp/h
+            echo "--- BODY ---"
+            head -c 30000 /tmp/b
+            echo
           done
