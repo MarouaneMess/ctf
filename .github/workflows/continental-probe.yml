@@ -1,8 +1,8 @@
 name: continental-probe
 on:
-  push:
+  pull_request:
     branches:
-      - tmp-continental-probe
+      - main
   workflow_dispatch:
 permissions:
   contents: read
