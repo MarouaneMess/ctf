@@ -8,13 +8,26 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Raw Postman request hits
+      - name: Probe documented v2 API
         shell: bash
         run: |
           set +e
-          for q in thecontinental notification activation deployment metadata; do
-            echo "===== $q ====="
-            curl -sS -X POST 'https://api.postman.com/search?limit=100' -H 'Content-Type: application/json'               --data "$(jq -nc --arg q "$q" '{elementType:"requests",q:$q,ownership:"all",filters:{"$and":[{"visibility":{"$eq":"public"}}]}}')" |
-              jq -c '.data[]? | {name,method,url,description,id,collection,workspace,createdBy}' |
-              grep -Ei '54600970|continental-devteam|thecontinental.azurewebsites.net|VM_CONCIERGE_IP|ztaha45' || true
-          done
+          B='https://thecontinental.azurewebsites.net'
+          probe() {
+            m="$1"; p="$2"; body="$3"
+            echo "===== $m $p ====="
+            if [ "$m" = GET ]; then
+              curl -skS -i "$B$p" | head -n 80
+            else
+              curl -skS -i -X "$m" "$B$p" -H 'Content-Type: application/json' -d "$body" | head -n 100
+            fi
+          }
+          probe GET /v2/services/available ''
+          probe GET /v2/reservations ''
+          probe POST /v2/auth/token '{}'
+          probe POST /v2/auth/token '{"name":"John","gold_coin_account":"1"}'
+          probe POST /v2/auth/refresh '{}'
+          probe POST /v2/concierge/dispatch '{}'
+          probe POST /v2/concierge/dispatch '{"service":"health"}'
+          probe POST /v2/concierge/dispatch '{"service":"health","target":"http://example.com"}'
+          probe OPTIONS /v2/concierge/dispatch ''
