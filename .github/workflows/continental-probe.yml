@@ -8,29 +8,33 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Extract Postman README hydration
+      - name: Extract Postman README
         shell: bash
         run: |
-          set -e
-          U='https://www.postman.com/continental-devteam/workspace/continental-devteam/document/fa787ab6-00be-4a28-ba90-7822883a55c8'
-          curl -LskS "$U" -o /tmp/p.html
-          echo '===== SIZE ====='
-          wc -c /tmp/p.html
-          echo '===== INTERESTING STRINGS ====='
-          grep -aEio '.{0,180}(WORKSPACE-README|VM_CONCIERGE_IP|concierge|runner|activation|Artifacts|winston|metadata|169\.254\.169\.254|[0-9]{1,3}(\.[0-9]{1,3}){3}).{0,260}' /tmp/p.html | head -n 120 || true
-          echo '===== HYDRATION MARKERS ====='
-          grep -aoE '<script[^>]+id="[^"]+"[^>]*>[^<]{0,2000}' /tmp/p.html | head -n 30 || true
-          echo '===== URLS / API PATHS ====='
-          grep -aoE 'https?://[^"'"'"' <>\\]+' /tmp/p.html | grep -Ei 'postman|continental|api' | sort -u | head -n 100 || true
-          echo '===== DOC-ID CONTEXT ====='
           python3 - <<'PY'
-s=open('/tmp/p.html','r',errors='ignore').read()
-for needle in ['fa787ab6-00be-4a28-ba90-7822883a55c8','WORKSPACE-README','VM_CONCIERGE_IP']:
-    pos=0
+import re, urllib.request, ssl
+u='https://www.postman.com/continental-devteam/workspace/continental-devteam/document/fa787ab6-00be-4a28-ba90-7822883a55c8'
+ctx=ssl.create_default_context()
+req=urllib.request.Request(u,headers={'User-Agent':'Mozilla/5.0'})
+s=urllib.request.urlopen(req,context=ctx,timeout=30).read().decode('utf-8','ignore')
+print('SIZE',len(s))
+needles=[
+ 'fa787ab6-00be-4a28-ba90-7822883a55c8','WORKSPACE-README',
+ 'VM_CONCIERGE_IP','concierge','runner','activation','Artifacts',
+ 'winston','metadata','169.254.169.254'
+]
+for needle in needles:
+    print('\n===== ',needle,' =====')
+    pos=0; n=0
     while True:
-        i=s.find(needle,pos)
-        if i<0: break
-        print('\n---',needle,'@',i,'---')
-        print(s[max(0,i-1000):i+4000])
-        pos=i+len(needle)
+        i=s.lower().find(needle.lower(),pos)
+        if i<0 or n>=10: break
+        print(s[max(0,i-500):i+1800].replace('\n',' ')[:2300])
+        pos=i+len(needle); n+=1
+ips=sorted(set(re.findall(r'(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?!\d)',s)))
+print('\nIPS',ips[:100])
+for m in re.finditer(r'<script[^>]*>(.*?)</script>',s,re.S|re.I):
+    b=m.group(1)
+    if any(x.lower() in b.lower() for x in ['fa787ab6','workspace-readme','vm_concierge']):
+        print('\n===== SCRIPT =====\n',b[:15000])
 PY
