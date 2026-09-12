@@ -10,28 +10,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Focused probe
+      - name: API and Postman probe
         shell: bash
         run: |
           set +e
-          echo "===== APP.JS ====="
-          curl -skS https://thecontinental.azurewebsites.net/static/app.js
-          echo
-          echo "===== STYLE interesting refs ====="
-          curl -skS https://thecontinental.azurewebsites.net/static/style.css | grep -Ei 'url\(|comment|source|api|secret|docker|azure' || true
-          echo
-          echo "===== DOCKER USER silvercryptor ====="
-          curl -fsSL 'https://hub.docker.com/v2/repositories/silvercryptor/?page_size=100' | jq -r '.results[] | [.namespace,.name,.is_private,.last_updated,.description] | @tsv'
-          echo
-          echo "===== DOCKER USER henryavery490 ====="
-          curl -fsSL 'https://hub.docker.com/v2/repositories/henryavery490/?page_size=100' | jq -r '.results[] | [.namespace,.name,.is_private,.last_updated,.description] | @tsv'
-          echo
-          echo "===== TARGETED ROUTES ====="
-          for p in reserve reservation reservations api/reserve api/reservation api/reservations book booking health debug console admin; do
-            code=$(curl -skS -o /tmp/x -w '%{http_code}' "https://thecontinental.azurewebsites.net/$p")
-            bytes=$(wc -c </tmp/x)
-            printf '%-24s %s %s\n' "/$p" "$code" "$bytes"
+          base='https://thecontinental.azurewebsites.net'
+          echo "===== API RESPONSES ====="
+          for p in api/status api/rooms api/v2/status api/v2/rooms api/v2 api/v2/ api/docs api/v2/docs api/openapi.json api/v2/openapi.json swagger swagger.json api/swagger.json api/v2/swagger.json; do
+            echo "===== /$p ====="
+            curl -skS -i --max-time 10 "$base/$p" | head -n 80
           done
-          echo
-          echo "===== OPTIONS ROOT ====="
-          curl -skS -i -X OPTIONS https://thecontinental.azurewebsites.net/ | head -n 30
+
+          echo "===== API METHODS ====="
+          for p in api/status api/rooms api/v2/status api/v2/rooms; do
+            echo "--- /$p"
+            curl -skS -i -X OPTIONS "$base/$p" | head -n 25
+          done
+
+          echo "===== POSTMAN URL PROBES ====="
+          for u in             'https://www.postman.com/continental-devteam'             'https://www.postman.com/continental-devteam/workspace/continental-devteam'             'https://www.postman.com/search?q=the-continental-api'             'https://www.postman.com/search?q=continental-devteam'; do
+            echo "===== $u ====="
+            curl -LskS -o /tmp/p -D /tmp/h --max-time 15 "$u"
+            head -n 12 /tmp/h
+            grep -Eio '.{0,100}(the-continental-api|continental-devteam|workspace|collection).{0,180}' /tmp/p | head -n 20 || true
+          done
