@@ -8,7 +8,16 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Fast Postman README extraction
+      - name: Capture Postman document network
         shell: bash
         run: |
-          python3 -c "import re,urllib.request;u='https://www.postman.com/continental-devteam/workspace/continental-devteam/document/fa787ab6-00be-4a28-ba90-7822883a55c8';r=urllib.request.Request(u,headers={'User-Agent':'Mozilla/5.0'});s=urllib.request.urlopen(r,timeout=20).read().decode('utf-8','ignore');print('SIZE',len(s));need=['fa787ab6-00be-4a28-ba90-7822883a55c8','WORKSPACE-README','VM_CONCIERGE_IP','runner','activation','Artifacts','winston','metadata','169.254.169.254'];[(print('\\n###',n),[print(s[max(0,i-400):i+1400].replace('\\\\n',' ')[:1800]) for i in [m.start() for m in list(re.finditer(re.escape(n),s,re.I))[:5]]]) for n in need];print('IPS',sorted(set(re.findall(r'(?<!\\\\d)(?:\\\\d{1,3}\\\\.){3}\\\\d{1,3}(?!\\\\d)',s)))[:100])"
+          which google-chrome || which chromium || true
+          google-chrome --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --virtual-time-budget=12000 --dump-dom 'https://www.postman.com/continental-devteam/workspace/continental-devteam/document/fa787ab6-00be-4a28-ba90-7822883a55c8' > /tmp/dom.html 2>/tmp/chrome.err || true
+          echo '===== DOM SIZE ====='
+          wc -c /tmp/dom.html
+          echo '===== DOM INTERESTING ====='
+          grep -aoiE '.{0,180}(WORKSPACE-README|VM_CONCIERGE_IP|concierge|activation|runner|Artifacts|winston|metadata|169\.254\.169\.254).{0,1000}' /tmp/dom.html | head -n 100 || true
+          echo '===== IPS ====='
+          grep -aoE '([0-9]{1,3}\.){3}[0-9]{1,3}' /tmp/dom.html | sort -u | head -n 100 || true
+          echo '===== ERR ====='
+          tail -n 60 /tmp/chrome.err || true
