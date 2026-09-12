@@ -1,38 +1,25 @@
 name: continental-probe
 on:
   pull_request:
-    branches:
-      - main
+    branches: [main]
 permissions:
   contents: read
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
     steps:
-      - name: Focused Postman and Azure Artifacts discovery
+      - name: Postman env/request search
         shell: bash
         run: |
           set +e
-          S='https://api.postman.com/search?limit=50'
-          for typ in requests environments collections workspaces; do
-            for q in 'VM_CONCIERGE_IP' 'metadata' 'deployment' 'activation' 'notification' 'runner' 'artifacts' 'concierge' 'thecontinental-dev'; do
-              R=$(curl -sS -X POST "$S" -H 'Content-Type: application/json'                 --data "$(jq -nc --arg t "$typ" --arg q "$q" '{elementType:$t,q:$q,ownership:"all",filters:{"$and":[{"visibility":{"$eq":"public"}}]}}')")
-              echo "$R" | jq -r --arg typ "$typ" --arg q "$q" '
-                .data[]? |
-                select(
-                  (.workspace.name?=="continental-devteam") or
-                  (.collection.name?|contains("Continental")) or
-                  (.organization.name?|contains("continental-devteam"))
-                ) |
-                [$typ,$q,(.name//""),(.method//""),(.url//""),(.description//""),(.id//""),(.workspace.id//"")] | @tsv
-              '
+          S='https://api.postman.com/search?limit=100'
+          for typ in environments requests; do
+            for q in continental 'The Continental' health upstream notifications activation deploy code VM_CONCIERGE_IP; do
+              echo "===== $typ :: $q ====="
+              curl -sS -X POST "$S" -H 'Content-Type: application/json'                 --data "$(jq -nc --arg t "$typ" --arg q "$q" '{elementType:$t,q:$q,ownership:"all",filters:{"$and":[{"visibility":{"$eq":"public"}}]}}')" |
+                jq -r '.data[]? | [
+                  (.name//""),(.id//""),(.method//""),(.url//""),(.description//""),
+                  (.workspace.name//""),(.workspace.id//""),(.collection.name//""),(.collection.id//"")
+                ] | @tsv' | grep -iE 'continental|54600970|7e7f4b2d' | head -n 40
             done
           done
-
-          echo '===== AZURE DEVOPS PROJECTS ====='
-          curl -skS -i 'https://dev.azure.com/thecontinental-dev/_apis/projects?api-version=7.1' | head -n 40
-          echo '===== FEEDS ====='
-          curl -skS -i 'https://feeds.dev.azure.com/thecontinental-dev/continental-api/_apis/packaging/feeds?api-version=7.1-preview.1' | head -n 40
-          echo '===== NPM V2 PACKAGE ====='
-          curl -skS -i 'https://pkgs.dev.azure.com/thecontinental-dev/continental-api/_packaging/continental-npm-v2/npm/registry/@continental%2fconcierge-sdk' | head -n 80
