@@ -10,27 +10,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: API and Postman probe
+      - name: Postman public API search
         shell: bash
         run: |
           set +e
-          base='https://thecontinental.azurewebsites.net'
-          echo "===== API RESPONSES ====="
-          for p in api/status api/rooms api/v2/status api/v2/rooms api/v2 api/v2/ api/docs api/v2/docs api/openapi.json api/v2/openapi.json swagger swagger.json api/swagger.json api/v2/swagger.json; do
-            echo "===== /$p ====="
-            curl -skS -i --max-time 10 "$base/$p" | head -n 80
-          done
-
-          echo "===== API METHODS ====="
-          for p in api/status api/rooms api/v2/status api/v2/rooms; do
-            echo "--- /$p"
-            curl -skS -i -X OPTIONS "$base/$p" | head -n 25
-          done
-
-          echo "===== POSTMAN URL PROBES ====="
-          for u in             'https://www.postman.com/continental-devteam'             'https://www.postman.com/continental-devteam/workspace/continental-devteam'             'https://www.postman.com/search?q=the-continental-api'             'https://www.postman.com/search?q=continental-devteam'; do
-            echo "===== $u ====="
-            curl -LskS -o /tmp/p -D /tmp/h --max-time 15 "$u"
-            head -n 12 /tmp/h
-            grep -Eio '.{0,100}(the-continental-api|continental-devteam|workspace|collection).{0,180}' /tmp/p | head -n 20 || true
-          done
+          search() {
+            typ="$1"; q="$2"
+            echo "===== $typ :: $q ====="
+            curl -sS -X POST 'https://api.postman.com/search?limit=25'               -H 'Content-Type: application/json'               --data "$(jq -nc --arg t "$typ" --arg q "$q" '{elementType:$t,q:$q,ownership:"all",filters:{"$and":[{"visibility":{"$eq":"public"}}]}}')"               | jq .
+          }
+          search collections 'the-continental-api'
+          search collections 'continental'
+          search workspaces 'continental-devteam'
+          search workspaces 'continental'
+          search requests 'thecontinental'
+          search requests 'continental-reservations'
