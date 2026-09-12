@@ -1,0 +1,28 @@
+name: continental-probe
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Search inside Postman document
+        shell: bash
+        run: |
+          set -e
+          WS='7e7f4b2d-192c-45b9-b1b5-a082983fd1c4'
+          for q in 'VM_CONCIERGE_IP' concierge metadata runner activation artifacts azure '169.254.169.254' health flag; do
+            echo "===== $q ====="
+            curl -fsS -X POST 'https://api.postman.com/search?limit=50'               -H 'Content-Type: application/json'               --data "$(jq -nc --arg q "$q" --arg ws "$WS" '{
+                elementType:"documents",
+                q:$q,
+                ownership:"all",
+                filters:{"$and":[
+                  {"visibility":{"$eq":"public"}},
+                  {"workspaceId":{"$eq":$ws}}
+                ]}
+              }')" | jq .
+          done
