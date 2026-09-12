@@ -1,0 +1,35 @@
+name: one-hit-cuso
+
+on:
+  push:
+    branches: [tmp-one-hit-wonder]
+    paths:
+      - '.github/workflows/onehit_cuso.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  solve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: tmp-one-hit-wonder
+          fetch-depth: 0
+      - name: Run Sage Coppersmith
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work sagemath/sagemath:latest bash -lc '
+            git clone -q https://github.com/keeganryan/cuso.git /tmp/cuso &&
+            sage -pip install -q -e /tmp/cuso &&
+            sage -python tmp_onehit/cuso_solve.py
+          '
+      - name: Publish answer
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git pull --rebase origin tmp-one-hit-wonder
+          git add tmp_onehit/answer.json
+          git commit -m "relay: cuso answer"
+          git push origin HEAD:tmp-one-hit-wonder
