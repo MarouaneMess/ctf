@@ -8,18 +8,19 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe notification endpoint
+      - name: Enumerate Postman workspace assets
         shell: bash
         run: |
-          set +e
-          echo '===== POSTMAN REQUEST SELF ====='
-          curl -skS -i             'https://api.postman.com/collections/54600970-62f5e9dc-0019-4cf5-bf1b-78ba287412d2/requests/54600970-e22d56b7-7787-4af1-b15f-737ba15c6e08' |
-            head -c 12000
-          echo
-          B='https://thecontinental.azurewebsites.net/v2/notify/send'
-          for body in             '{}'             '{"to":"winston@ztaha45hotmail.onmicrosoft.com"}'             '{"recipient":"winston@ztaha45hotmail.onmicrosoft.com"}'             '{"email":"winston@ztaha45hotmail.onmicrosoft.com"}'             '{"to":"winston@ztaha45hotmail.onmicrosoft.com","subject":"test","body":"test"}'             '{"recipient":"winston@ztaha45hotmail.onmicrosoft.com","type":"activation"}'; do
-              echo "===== BODY $body ====="
-              curl -skS -i -X POST "$B" -H 'Content-Type: application/json' -d "$body" | head -n 100
+          set -e
+          WS='7e7f4b2d-192c-45b9-b1b5-a082983fd1c4'
+          for typ in environments collections mocks flows specs documents; do
+            echo "===== $typ ====="
+            curl -fsS -X POST 'https://api.postman.com/search?limit=25'               -H 'Content-Type: application/json'               --data "$(jq -nc --arg typ "$typ" --arg ws "$WS" '{
+                elementType:$typ,
+                ownership:"all",
+                filters:{"$and":[
+                  {"visibility":{"$eq":"public"}},
+                  {"workspaceId":{"$eq":$ws}}
+                ]}
+              }')" | jq .
           done
-          echo '===== OPTIONS ====='
-          curl -skS -i -X OPTIONS "$B" | head -n 60
