@@ -1,0 +1,67 @@
+name: continental-probe
+
+on:
+  push:
+    branches: [tmp-continental-probe]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Probe target and public registries
+        shell: bash
+        run: |
+          set +e
+          echo '===== DNS ====='
+          getent ahostsv4 thecontinental.azurewebsites.net || true
+          getent ahostsv4 thecontinental.scm.azurewebsites.net || true
+
+          echo '===== ROOT HEADERS ====='
+          curl -skS -D - -o /tmp/root.html https://thecontinental.azurewebsites.net/ | sed -n '1,80p'
+          echo '===== ROOT HTML ====='
+          sed -n '1,260p' /tmp/root.html
+
+          echo '===== ROOT EXTRACTED URLS ====='
+          grep -Eo '(src|href|action)="[^"]+"' /tmp/root.html || true
+
+          for p in robots.txt .git/HEAD .env api/ .auth/me site/wwwroot/web.config Dockerfile docker-compose.yml; do
+            echo "===== PATH /$p ====="
+            curl -skS -i --max-time 10 "https://thecontinental.azurewebsites.net/$p" | head -120
+          done
+
+          echo '===== SCM ROOT ====='
+          curl -skS -i --max-time 15 https://thecontinental.scm.azurewebsites.net/ | head -160
+
+          echo '===== SCM COMMON ====='
+          for p in api/settings api/environment api/deployments Env; do
+            echo "--- SCM /$p"
+            curl -skS -i --max-time 10 "https://thecontinental.scm.azurewebsites.net/$p" | head -120
+          done
+
+          echo '===== DOCKER HUB USERS ====='
+          for u in silvercryptor henryavery490; do
+            echo "--- USER $u"
+            curl -fsSL "https://hub.docker.com/v2/repositories/$u/?page_size=100" | tee "/tmp/$u.json"
+            echo
+            python3 - "$u" "/tmp/$u.json" <<'PY'
+import json,sys
+u,path=sys.argv[1:]
+try:
+    d=json.load(open(path))
+    for x in d.get("results",[]):
+        print(u+"/"+x.get("name",""), "private="+str(x.get("is_private")), "updated="+str(x.get("last_updated")))
+except Exception as e: print("parse-error",e)
+PY
+          done
+
+          echo '===== DOCKER HUB SEARCH ====='
+          for q in thecontinental the-continental continental johnwick john-wick babayaga high-table; do
+            echo "--- SEARCH $q"
+            curl -fsSLG 'https://hub.docker.com/v2/search/repositories/' --data-urlencode "query=$q" --data 'page_size=100' |
+              python3 -c 'import sys,json; d=json.load(sys.stdin); print("\n".join(f"{x.get(\"repo_name\")}\t{x.get(\"short_description\")}\t{x.get(\"last_updated\")}" for x in d.get("results",[])))' || true
+          done
