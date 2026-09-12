@@ -8,14 +8,13 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Dump matching Postman requests
+      - name: Raw Postman request hits
         shell: bash
         run: |
           set +e
-          S='https://api.postman.com/search?limit=100'
-          for q in thecontinental winston notification notifications activation deployment metadata concierge; do
+          for q in thecontinental notification activation deployment metadata; do
             echo "===== $q ====="
-            curl -sS -X POST "$S" -H 'Content-Type: application/json'               --data "$(jq -nc --arg q "$q" '{elementType:"requests",q:$q,ownership:"all",filters:{"$and":[{"visibility":{"$eq":"public"}}]}}')" |
-              jq -r '.data[]? | select((.collection.id//"")|startswith("54600970-")) |
-                [.name,.method,.url,.description,.id,.collection.id,.collection.name,.workspace.name] | @tsv'
+            curl -sS -X POST 'https://api.postman.com/search?limit=100' -H 'Content-Type: application/json'               --data "$(jq -nc --arg q "$q" '{elementType:"requests",q:$q,ownership:"all",filters:{"$and":[{"visibility":{"$eq":"public"}}]}}')" |
+              jq -c '.data[]? | {name,method,url,description,id,collection,workspace,createdBy}' |
+              grep -Ei '54600970|continental-devteam|thecontinental.azurewebsites.net|VM_CONCIERGE_IP|ztaha45' || true
           done
