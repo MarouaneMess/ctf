@@ -19,17 +19,22 @@ jobs:
           ref: tmp-one-hit-wonder
           fetch-depth: 0
       - name: Run Sage Coppersmith
+        id: solve
+        continue-on-error: true
         run: |
+          set -o pipefail
           docker run --rm -v "$PWD:/work" -w /work sagemath/sagemath:latest bash -lc '
             git clone -q https://github.com/keeganryan/cuso.git /tmp/cuso &&
             sage -pip install -q -e /tmp/cuso &&
             sage -python tmp_onehit/cuso_solve.py
-          '
-      - name: Publish answer
+          ' 2>&1 | tee tmp_onehit/cuso_log.txt
+      - name: Publish status
+        if: always()
         run: |
           git config user.name github-actions
           git config user.email github-actions@github.com
-          git pull --rebase origin tmp-one-hit-wonder
-          git add tmp_onehit/answer.json
-          git commit -m "relay: cuso answer"
-          git push origin HEAD:tmp-one-hit-wonder
+          git pull --rebase origin tmp-one-hit-wonder || true
+          date -u > tmp_onehit/cuso_done.txt
+          git add tmp_onehit/cuso_log.txt tmp_onehit/cuso_done.txt tmp_onehit/answer.json 2>/dev/null || true
+          git commit -m "relay: cuso status" || true
+          git push origin HEAD:tmp-one-hit-wonder || true
