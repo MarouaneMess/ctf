@@ -3,7 +3,6 @@ on:
   pull_request:
     branches:
       - main
-  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -11,45 +10,28 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Probe
+      - name: Focused probe
         shell: bash
         run: |
           set +e
-          echo "===== DNS ====="
-          getent ahostsv4 thecontinental.azurewebsites.net || true
-          getent ahostsv4 thecontinental.scm.azurewebsites.net || true
-
-          echo "===== ROOT ====="
-          curl -skS -D /tmp/root.headers -o /tmp/root.html https://thecontinental.azurewebsites.net/
-          cat /tmp/root.headers
-          sed -n '1,320p' /tmp/root.html
-
-          echo "===== LINKS ====="
-          grep -Eo '(src|href|action)="[^"]+"' /tmp/root.html || true
-
-          echo "===== COMMON PATHS ====="
-          for p in robots.txt .git/HEAD .env api/ .auth/me web.config Dockerfile docker-compose.yml; do
-            echo "===== /$p ====="
-            curl -skS -i --max-time 10 "https://thecontinental.azurewebsites.net/$p" | head -n 120
+          echo "===== APP.JS ====="
+          curl -skS https://thecontinental.azurewebsites.net/static/app.js
+          echo
+          echo "===== STYLE interesting refs ====="
+          curl -skS https://thecontinental.azurewebsites.net/static/style.css | grep -Ei 'url\(|comment|source|api|secret|docker|azure' || true
+          echo
+          echo "===== DOCKER USER silvercryptor ====="
+          curl -fsSL 'https://hub.docker.com/v2/repositories/silvercryptor/?page_size=100' | jq -r '.results[] | [.namespace,.name,.is_private,.last_updated,.description] | @tsv'
+          echo
+          echo "===== DOCKER USER henryavery490 ====="
+          curl -fsSL 'https://hub.docker.com/v2/repositories/henryavery490/?page_size=100' | jq -r '.results[] | [.namespace,.name,.is_private,.last_updated,.description] | @tsv'
+          echo
+          echo "===== TARGETED ROUTES ====="
+          for p in reserve reservation reservations api/reserve api/reservation api/reservations book booking health debug console admin; do
+            code=$(curl -skS -o /tmp/x -w '%{http_code}' "https://thecontinental.azurewebsites.net/$p")
+            bytes=$(wc -c </tmp/x)
+            printf '%-24s %s %s\n' "/$p" "$code" "$bytes"
           done
-
-          echo "===== SCM ROOT ====="
-          curl -skS -i --max-time 15 https://thecontinental.scm.azurewebsites.net/ | head -n 180
-
-          echo "===== SCM COMMON ====="
-          for p in api/settings api/environment api/deployments Env; do
-            echo "===== SCM /$p ====="
-            curl -skS -i --max-time 10 "https://thecontinental.scm.azurewebsites.net/$p" | head -n 120
-          done
-
-          echo "===== DOCKER USERS ====="
-          for u in silvercryptor henryavery490; do
-            echo "===== USER $u ====="
-            curl -fsSL "https://hub.docker.com/v2/repositories/$u/?page_size=100" | jq -r '.results[] | [.namespace,.name,.is_private,.last_updated] | @tsv' || true
-          done
-
-          echo "===== DOCKER SEARCH ====="
-          for q in thecontinental the-continental continental johnwick john-wick babayaga high-table; do
-            echo "===== SEARCH $q ====="
-            curl -fsSLG 'https://hub.docker.com/v2/search/repositories/' --data-urlencode "query=$q" --data 'page_size=100' | jq -r '.results[] | [.repo_name,.short_description,.last_updated] | @tsv' || true
-          done
+          echo
+          echo "===== OPTIONS ROOT ====="
+          curl -skS -i -X OPTIONS https://thecontinental.azurewebsites.net/ | head -n 30
