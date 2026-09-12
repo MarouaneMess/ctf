@@ -1,0 +1,126 @@
+name: one-hit-relay
+
+on:
+  push:
+    branches: [tmp-one-hit-wonder]
+    paths:
+      - '.github/workflows/onehit.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 19
+    env:
+      HOST: 950b44138f304162.chal.ctf.ae
+      PORT: "443"
+      BRANCH: tmp-one-hit-wonder
+      REPO: MarouaneMess/ctf
+    steps:
+      - name: Relay challenge
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import base64, json, os, re, socket, ssl, time, urllib.request, urllib.error
+
+          HOST=os.environ["HOST"]; PORT=int(os.environ["PORT"])
+          REPO=os.environ["REPO"]; BRANCH=os.environ["BRANCH"]
+          TOKEN=os.environ["GH_TOKEN"]
+          API=f"https://api.github.com/repos/{REPO}/contents/tmp_onehit"
+
+          def api_req(method, path, obj=None):
+              url=f"{API}/{path}"
+              if method=="GET":
+                  url += "?ref=" + BRANCH
+              data=None if obj is None else json.dumps(obj).encode()
+              req=urllib.request.Request(url, data=data, method=method)
+              req.add_header("Authorization", "Bearer "+TOKEN)
+              req.add_header("Accept", "application/vnd.github+json")
+              req.add_header("X-GitHub-Api-Version", "2022-11-28")
+              if data is not None: req.add_header("Content-Type","application/json")
+              with urllib.request.urlopen(req, timeout=20) as r:
+                  return json.load(r)
+
+          def put_json(name, obj):
+              raw=json.dumps(obj, indent=2).encode()
+              body={"message":f"relay: {name}","content":base64.b64encode(raw).decode(),"branch":BRANCH}
+              try:
+                  cur=api_req("GET", name)
+                  body["sha"]=cur["sha"]
+              except urllib.error.HTTPError as e:
+                  if e.code != 404: raise
+              return api_req("PUT", name, body)
+
+          def get_json(name):
+              try:
+                  cur=api_req("GET", name)
+                  return json.loads(base64.b64decode(cur["content"]).decode())
+              except urllib.error.HTTPError as e:
+                  if e.code==404: return None
+                  raise
+
+          def recv_until(s, marker, limit=1<<20):
+              buf=b""
+              while marker not in buf:
+                  b=s.recv(4096)
+                  if not b: break
+                  buf += b
+                  if len(buf)>limit: raise RuntimeError("too much data")
+              return buf
+
+          try:
+              raw=socket.create_connection((HOST,PORT), timeout=15)
+              ctx=ssl.create_default_context()
+              s=ctx.wrap_socket(raw, server_hostname=HOST)
+              banner=recv_until(s,b"> ")
+              s.sendall(b"1\n")
+              info=recv_until(s,b"> ")
+              txt=info.decode(errors="replace")
+              mp=re.search(r"p = (\d+)",txt)
+              mb=re.search(r"bits = (\d+)",txt)
+              mk=re.search(r"keep = (\d+)",txt)
+              if not (mp and mb and mk): raise RuntimeError("failed to parse info: "+txt)
+              p=int(mp.group(1)); bits=int(mb.group(1)); keep=int(mk.group(1))
+              leaks=[]
+              for t in range(8):
+                  s.sendall(b"2\n")
+                  q=recv_until(s,b"x = ")
+                  s.sendall((str(t)+"\n").encode())
+                  out=recv_until(s,b"> ")
+                  st=out.decode(errors="replace")
+                  my=re.search(r"y = (\d+)",st)
+                  if not my: raise RuntimeError(f"failed tap {t}: "+st)
+                  leaks.append({"t":t,"y":int(my.group(1))})
+              put_json("leaks.json", {"host":HOST,"p":p,"bits":bits,"keep":keep,"leaks":leaks})
+              deadline=time.time()+900
+              ans=None
+              while time.time()<deadline:
+                  ans=get_json("answer.json")
+                  if ans and "u" in ans and "v" in ans:
+                      break
+                  time.sleep(3)
+              if not ans: raise RuntimeError("timed out waiting for answer.json")
+              u=int(ans["u"]); v=int(ans["v"])
+              s.sendall(b"4\n")
+              recv_until(s,b"a = ")
+              s.sendall((str(u)+"\n").encode())
+              recv_until(s,b"b = ")
+              s.sendall((str(v)+"\n").encode())
+              result=recv_until(s,b"}",limit=1<<20)
+              # collect any trailing output too
+              try:
+                  s.settimeout(1)
+                  result += s.recv(4096)
+              except Exception:
+                  pass
+              rt=result.decode(errors="replace")
+              m=re.search(r"pwnsec\{[^\r\n}]*\}",rt)
+              put_json("result.json", {"ok":bool(m),"flag":m.group(0) if m else None,"response":rt})
+          except Exception as e:
+              try: put_json("result.json", {"ok":False,"error":repr(e)})
+              except Exception: pass
+              raise
+          PY
