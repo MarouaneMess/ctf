@@ -8,20 +8,19 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Old feed and VM DNS
+      - name: Enumerate Postman collections by ID
         shell: bash
         run: |
-          set +e
-          echo '===== OLD FEED PATHS ====='
-          for u in             'https://pkgs.dev.azure.com/thecontinental-dev/_packaging/continental-npm/npm/registry/@continental%2fconcierge-sdk'             'https://pkgs.dev.azure.com/thecontinental-dev/continental-api/_packaging/continental-npm/npm/registry/@continental%2fconcierge-sdk'             'https://pkgs.dev.azure.com/thecontinental-dev/_packaging/continental-npm-v2/npm/registry/@continental%2fconcierge-sdk'             'https://pkgs.dev.azure.com/thecontinental-dev/continental-api/_packaging/continental-npm-v2/npm/registry/@continental%2fconcierge-sdk'; do
-              code=$(curl -skS -o /tmp/b -w '%{http_code}' "$u")
-              echo "$code $u bytes=$(wc -c </tmp/b)"
-              head -c 500 /tmp/b; echo
-          done
-
-          echo '===== CLOUDAPP DNS ====='
-          for r in eastus eastus2 centralus northcentralus southcentralus westcentralus westus westus2 westus3                    canadacentral canadaeast brazilsouth northeurope westeurope uksouth ukwest francecentral                    germanywestcentral switzerlandnorth norwayeast swedencentral polandcentral italynorth                    uaenorth uaecloud dubainorth qatarcentral centralindia southindia westindia southeastasia eastasia                    japaneast japanwest koreacentral australiaeast australiasoutheast; do
-            h="vm-runner-continental.$r.cloudapp.azure.com"
-            ip=$(getent ahostsv4 "$h" 2>/dev/null | awk 'NR==1{print $1}')
-            [ -n "$ip" ] && echo "$h $ip"
+          set -e
+          for cid in             '54600970-4edc63a9-1623-4304-8ad5-c6e0662b6452'             '54600970-62f5e9dc-0019-4cf5-bf1b-78ba287412d2'; do
+            echo "===== COLLECTION $cid ====="
+            curl -fsS -X POST 'https://api.postman.com/search?limit=25'               -H 'Content-Type: application/json'               --data "$(jq -nc --arg cid "$cid" '{
+                elementType:"requests",
+                ownership:"all",
+                filters:{"$and":[
+                  {"visibility":{"$eq":"public"}},
+                  {"collectionId":{"$eq":$cid}}
+                ]}
+              }')" |
+              jq '{meta, data:[.data[]? | {id,name,method,url,description,collection,workspace,links}]}'
           done
