@@ -9,7 +9,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Extract Bifrost HTTP2 paths
+      - name: Search inside Postman document
         shell: bash
         run: |
-          python3 -c 'import re,subprocess;U='"'"'https://www.postman.com/continental-devteam/workspace/continental-devteam/document/fa787ab6-00be-4a28-ba90-7822883a55c8'"'"';subprocess.run(['"'"'timeout'"'"','"'"'14s'"'"','"'"'google-chrome'"'"','"'"'--headless=new'"'"','"'"'--no-sandbox'"'"','"'"'--disable-gpu'"'"','"'"'--disable-dev-shm-usage'"'"','"'"'--virtual-time-budget=6000'"'"','"'"'--log-net-log=/tmp/n'"'"','"'"'--net-log-capture-mode=IncludeSensitive'"'"','"'"'--dump-dom'"'"',U],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);s=open('"'"'/tmp/n'"'"','"'"'r'"'"',errors='"'"'ignore'"'"').read();print('"'"'AUTHORITY EVENTS'"'"');[print(s[max(0,m.start()-500):m.start()+4000].replace('"'"'\\n'"'"','"'"' '"'"')[:4500]) for m in list(re.finditer(r'"'"':authority: bifrost'"'"',s,re.I))[:80]];print('"'"'ALL UNIQUE H2 PATHS'"'"');[print(x) for x in sorted(set(re.findall(r'"'"':path: ([^"\\\r\n]+)'"'"',s)))][:500]'
+          set -e
+          WS='7e7f4b2d-192c-45b9-b1b5-a082983fd1c4'
+          for q in 'VM_CONCIERGE_IP' concierge metadata runner activation artifacts azure '169.254.169.254' health flag; do
+            echo "===== $q ====="
+            curl -fsS -X POST 'https://api.postman.com/search?limit=50'               -H 'Content-Type: application/json'               --data "$(jq -nc --arg q "$q" --arg ws "$WS" '{
+                elementType:"documents",
+                q:$q,
+                ownership:"all",
+                filters:{"$and":[
+                  {"visibility":{"$eq":"public"}},
+                  {"workspaceId":{"$eq":$ws}}
+                ]}
+              }')" | jq .
+          done
