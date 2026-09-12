@@ -1,0 +1,23 @@
+name: one-hit-ping
+on:
+  push:
+    branches: [tmp-one-hit-wonder]
+    paths: ['.github/workflows/onehit_ping.yml']
+permissions:
+  contents: write
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: tmp-one-hit-wonder
+          fetch-depth: 0
+      - run: |
+          date -u > tmp_onehit/ping.txt
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git pull --rebase origin tmp-one-hit-wonder || true
+          git add tmp_onehit/ping.txt
+          git commit -m "relay: ping"
+          git push origin HEAD:tmp-one-hit-wonder
