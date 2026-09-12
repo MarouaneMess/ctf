@@ -8,26 +8,20 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe documented v2 API
+      - name: Old feed and VM DNS
         shell: bash
         run: |
           set +e
-          B='https://thecontinental.azurewebsites.net'
-          probe() {
-            m="$1"; p="$2"; body="$3"
-            echo "===== $m $p ====="
-            if [ "$m" = GET ]; then
-              curl -skS -i "$B$p" | head -n 80
-            else
-              curl -skS -i -X "$m" "$B$p" -H 'Content-Type: application/json' -d "$body" | head -n 100
-            fi
-          }
-          probe GET /v2/services/available ''
-          probe GET /v2/reservations ''
-          probe POST /v2/auth/token '{}'
-          probe POST /v2/auth/token '{"name":"John","gold_coin_account":"1"}'
-          probe POST /v2/auth/refresh '{}'
-          probe POST /v2/concierge/dispatch '{}'
-          probe POST /v2/concierge/dispatch '{"service":"health"}'
-          probe POST /v2/concierge/dispatch '{"service":"health","target":"http://example.com"}'
-          probe OPTIONS /v2/concierge/dispatch ''
+          echo '===== OLD FEED PATHS ====='
+          for u in             'https://pkgs.dev.azure.com/thecontinental-dev/_packaging/continental-npm/npm/registry/@continental%2fconcierge-sdk'             'https://pkgs.dev.azure.com/thecontinental-dev/continental-api/_packaging/continental-npm/npm/registry/@continental%2fconcierge-sdk'             'https://pkgs.dev.azure.com/thecontinental-dev/_packaging/continental-npm-v2/npm/registry/@continental%2fconcierge-sdk'             'https://pkgs.dev.azure.com/thecontinental-dev/continental-api/_packaging/continental-npm-v2/npm/registry/@continental%2fconcierge-sdk'; do
+              code=$(curl -skS -o /tmp/b -w '%{http_code}' "$u")
+              echo "$code $u bytes=$(wc -c </tmp/b)"
+              head -c 500 /tmp/b; echo
+          done
+
+          echo '===== CLOUDAPP DNS ====='
+          for r in eastus eastus2 centralus northcentralus southcentralus westcentralus westus westus2 westus3                    canadacentral canadaeast brazilsouth northeurope westeurope uksouth ukwest francecentral                    germanywestcentral switzerlandnorth norwayeast swedencentral polandcentral italynorth                    uaenorth uaecloud dubainorth qatarcentral centralindia southindia westindia southeastasia eastasia                    japaneast japanwest koreacentral australiaeast australiasoutheast; do
+            h="vm-runner-continental.$r.cloudapp.azure.com"
+            ip=$(getent ahostsv4 "$h" 2>/dev/null | awk 'NR==1{print $1}')
+            [ -n "$ip" ] && echo "$h $ip"
+          done
