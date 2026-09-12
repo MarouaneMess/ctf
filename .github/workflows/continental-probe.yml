@@ -8,16 +8,14 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Enumerate Postman public workspace
+      - name: Dump matching Postman requests
         shell: bash
         run: |
           set +e
           S='https://api.postman.com/search?limit=100'
-          for q in thecontinental winston notifications notification deploy activation concierge metadata; do
-            echo "===== REQUEST SEARCH $q ====="
+          for q in thecontinental winston notification notifications activation deployment metadata concierge; do
+            echo "===== $q ====="
             curl -sS -X POST "$S" -H 'Content-Type: application/json'               --data "$(jq -nc --arg q "$q" '{elementType:"requests",q:$q,ownership:"all",filters:{"$and":[{"visibility":{"$eq":"public"}}]}}')" |
-              jq -r '.data[]? | select(.createdBy=="54600970") |
-                [.name,.method,.url,.description,.id,.collection.id,.collection.name] | @tsv'
+              jq -r '.data[]? | select((.collection.id//"")|startswith("54600970-")) |
+                [.name,.method,.url,.description,.id,.collection.id,.collection.name,.workspace.name] | @tsv'
           done
-          echo "===== INTERNAL POSTMAN LIST ====="
-          curl -skS -i -X POST             'https://www.postman.com/_api/list/collection?workspace=7e7f4b2d-192c-45b9-b1b5-a082983fd1c4'             -H 'x-app-version: 11.0.0' -H 'x-entity-team-id: 15722568' | head -c 12000
