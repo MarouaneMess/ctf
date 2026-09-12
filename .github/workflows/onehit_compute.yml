@@ -1,0 +1,73 @@
+name: one-hit-compute
+
+on:
+  push:
+    branches: [tmp-one-hit-wonder]
+    paths:
+      - '.github/workflows/onehit_compute.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  compute:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: tmp-one-hit-wonder
+          fetch-depth: 0
+      - name: Install fpylll
+        run: pip install --quiet fpylll cysignals
+      - name: Reduce lattice
+        run: |
+          git pull --ff-only origin tmp-one-hit-wonder || true
+          python3 - <<'PY'
+          import json
+          from fpylll import IntegerMatrix, LLL
+
+          with open("tmp_onehit/leaks.json") as f: d=json.load(f)
+          p=int(d["p"]); n=int(d["bits"]); k=int(d["keep"])
+          low=n-k
+          # centered low-bit errors: z_i = A_i + e_i, |e_i| <= 2^(low-1)
+          X=1<<(low-1)
+          hs=[int(q["y"]) for q in d["leaks"]]
+          A=[(h<<low)+X for h in hs]
+          pairs=[(i,j) for i in range(1,8) for j in range(i+1,8)]
+          qn=len(pairs); D=qn+8+1
+
+          def cmod(a):
+              a%=p
+              return a-p if a>p//2 else a
+
+          rows=[]
+          for qi,(i,j) in enumerate(pairs):
+              r=[0]*D
+              r[qi]=X*X
+              A0,Ai,Aj=A[0],A[i],A[j]
+              L0=j*Aj-i*Ai
+              Li=(i-j)*Aj-i*A0
+              Lj=(i-j)*Ai+j*A0
+              C=(i-j)*Ai*Aj+j*A0*Aj-i*A0*Ai
+              r[qn+0]=cmod(L0)*X
+              r[qn+i]=cmod(Li)*X
+              r[qn+j]=cmod(Lj)*X
+              r[-1]=cmod(C)
+              rows.append(r)
+          for i in range(8):
+              r=[0]*D; r[qn+i]=p*X; rows.append(r)
+          r=[0]*D; r[-1]=p; rows.append(r)
+
+          M=IntegerMatrix.from_matrix(rows)
+          LLL.reduction(M, delta=0.999, eta=0.501)
+          red=[[int(M[i,j]) for j in range(D)] for i in range(D)]
+          out={"X":X,"pairs":pairs,"rows":red}
+          with open("tmp_onehit/reduced.json","w") as f: json.dump(out,f)
+          print("done",D)
+          PY
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add tmp_onehit/reduced.json
+          git commit -m 'relay: reduced lattice'
+          git push origin HEAD:tmp-one-hit-wonder
