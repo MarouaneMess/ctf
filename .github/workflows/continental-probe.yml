@@ -9,16 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Capture Postman XHR URLs
+      - name: Extract Bifrost document traffic
         shell: bash
         run: |
-          U='https://www.postman.com/continental-devteam/workspace/continental-devteam/document/fa787ab6-00be-4a28-ba90-7822883a55c8'
-          timeout 25s google-chrome --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --virtual-time-budget=10000 --log-net-log=/tmp/netlog.json --net-log-capture-mode=IncludeSensitive --dump-dom "$U" > /tmp/dom.html 2>/tmp/chrome.err || true
-          echo '===== DOM ====='
-          grep -aoiE '.{0,160}(WORKSPACE-README|VM_CONCIERGE_IP|activation|Artifacts|winston|169\.254\.169\.254).{0,900}' /tmp/dom.html | head -n 80 || true
-          echo '===== NET URLS ====='
-          grep -aoE 'https?[^" ]+' /tmp/netlog.json 2>/dev/null | sed 's/\\u0026/\&/g;s/\\\//\//g' | grep -Ei 'postman|document|doc|workspace|continental|api' | sort -u | head -n 250 || true
-          echo '===== NET CONTEXT ====='
-          grep -aoiE '.{0,200}(fa787ab6-00be-4a28-ba90-7822883a55c8|WORKSPACE-README).{0,1200}' /tmp/netlog.json 2>/dev/null | head -n 60 || true
-          echo '===== SIZES ====='
-          wc -c /tmp/dom.html /tmp/netlog.json /tmp/chrome.err 2>/dev/null || true
+          python3 -c "import json,subprocess,os,time\nU='https://www.postman.com/continental-devteam/workspace/continental-devteam/document/fa787ab6-00be-4a28-ba90-7822883a55c8'\nsubprocess.run(['timeout','20s','google-chrome','--headless=new','--no-sandbox','--disable-gpu','--disable-dev-shm-usage','--virtual-time-budget=8000','--log-net-log=/tmp/netlog.json','--net-log-capture-mode=IncludeSensitive','--dump-dom',U],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)\nd=json.load(open('/tmp/netlog.json'))\nfor e in d.get('events',[]):\n    p=e.get('params',{})\n    s=json.dumps(p,separators=(',',':'))\n    sl=s.lower()\n    if ('bifrost' in sl or 'fa787ab6' in sl or 'workspace-readme' in sl or '/document' in sl) and len(s)<20000:\n        print('TYPE',e.get('type'),'SOURCE',e.get('source'))\n        print(s[:12000])\n"
